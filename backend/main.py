@@ -2,6 +2,8 @@ import random
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from openai import OpenAI
+import re
+import json
 
 # Inicializa cliente OpenAI
 client = OpenAI()
@@ -37,18 +39,22 @@ Fato: "{fact}"
 Responda no formato JSON com as chaves: neutra, sensacionalista, omissiva, manipuladora.
 """
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model="gpt-4.1-mini",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.8,
     )
     content = response.choices[0].message.content
+    
+    print("Generated headlines:", content)
+    
+    match = re.search(r"\{.*\}", content, re.DOTALL)
+    if not match:
+        raise HTTPException(status_code=500, detail="Erro ao extrair JSON do GPT")
 
-    # ⚠️ Aqui assumo que o modelo retorna JSON válido
-    import json
     try:
-        headlines = json.loads(content)
-    except Exception:
-        raise HTTPException(status_code=500, detail="Erro ao gerar manchetes")
+        headlines = json.loads(match.group())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao converter JSON: {e}")
 
     return headlines
 
@@ -69,6 +75,7 @@ def new_round(game_id: str):
     if game_id not in games:
         raise HTTPException(status_code=404, detail="Jogo não encontrado")
 
+    # Noticias que vêm da Nathália
     facts = [
         "A vacina contra COVID-19 reduz em 90% o risco de hospitalização",
         "A taxa de desemprego caiu 2% no último trimestre",
@@ -92,6 +99,8 @@ def new_round(game_id: str):
     # embaralha as manchetes para o usuário ordenar
     shuffled = list(headlines.items())
     random.shuffle(shuffled)
+
+    print("Shuffled headlines:", shuffled)
 
     # salva a rodada
     game["round"] += 1
