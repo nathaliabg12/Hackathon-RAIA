@@ -2,6 +2,10 @@ import random
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from openai import OpenAI
+import requests
+import re
+import json
+
 
 # Inicializa cliente OpenAI
 client = OpenAI()
@@ -44,14 +48,16 @@ Responda no formato JSON com as chaves: neutra, sensacionalista, omissiva, manip
     content = response.choices[0].message.content
 
     # ⚠️ Aqui assumo que o modelo retorna JSON válido
-    import json
+    match = re.search(r"\{.*\}", content, re.DOTALL)
+    if not match:
+        raise HTTPException(status_code=500, detail="Erro ao extrair JSON do GPT")
+
     try:
-        headlines = json.loads(content)
-    except Exception:
-        raise HTTPException(status_code=500, detail="Erro ao gerar manchetes")
+        headlines = json.loads(match.group())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao converter JSON: {e}")
 
     return headlines
-
 
 # --- Endpoints ---
 
@@ -69,18 +75,33 @@ def new_round(game_id: str):
     if game_id not in games:
         raise HTTPException(status_code=404, detail="Jogo não encontrado")
 
-    facts = [
-        "A vacina contra COVID-19 reduz em 90% o risco de hospitalização",
-        "A taxa de desemprego caiu 2% no último trimestre",
-        "Um novo recorde de temperatura foi registrado no Ártico",
-        "O PIB do país cresceu 3% no último ano",
-        "Um asteroide passou a 7 milhões de km da Terra",
-        "A poluição do ar nas grandes cidades caiu 15% em 2024",
-        "Cientistas descobriram um novo exoplaneta parecido com a Terra",
-        "O uso de energia solar aumentou 25% em 2025",
-        "O consumo de carne vermelha caiu 10% no Brasil",
-        "O transporte público recebeu investimento de 5 bilhões em 2025"
-    ]
+    url = "https://newsapi.org/v2/everything"
+
+    params = {
+        "q": "notícias",      
+        "from": "2025-09-18",
+        "sortBy": "popularity",
+        "language": "pt",     
+        "pageSize": 10,       
+    }
+
+    response = requests.get(url, params=params)
+    data = response.json()
+
+    facts = [article["title"] for article in data.get("articles", [])]
+
+    #facts = [
+    #    "A vacina contra COVID-19 reduz em 90% o risco de hospitalização",
+    #    "A taxa de desemprego caiu 2% no último trimestre",
+    #    "Um novo recorde de temperatura foi registrado no Ártico",
+    #    "O PIB do país cresceu 3% no último ano",
+    #    "Um asteroide passou a 7 milhões de km da Terra",
+    #    "A poluição do ar nas grandes cidades caiu 15% em 2024",
+    #    "Cientistas descobriram um novo exoplaneta parecido com a Terra",
+    #    "O uso de energia solar aumentou 25% em 2025",
+    #    "O consumo de carne vermelha caiu 10% no Brasil",
+    #    "O transporte público recebeu investimento de 5 bilhões em 2025"
+    #]
 
     game = games[game_id]
     if game["round"] >= 10:
